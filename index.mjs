@@ -108,6 +108,32 @@ async function probe(base, key) {
   return null
 }
 
+// verifyAnswer asks the instance for one real, tiny reply, so a
+// sign-in's success means Muse actually answered — not merely
+// that the steps ran. The first request also warms the instance's
+// browser, so it is given minutes, not seconds.
+async function verifyAnswer(base, key) {
+  let res
+  try {
+    res = await fetch(`${base}/chat/completions`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${key}`, "content-type": "application/json" },
+      body: JSON.stringify({ model: "muse-spark", messages: [{ role: "user", content: "Say ok" }], max_tokens: 4, stream: false }),
+      signal: AbortSignal.timeout(180_000),
+    })
+  } catch (e) {
+    return { ok: false, detail: `the test request never reached an answer (${e?.cause?.message ?? e.message})` }
+  }
+  if (res.ok) return { ok: true }
+  let detail = `the instance answered the test request with ${res.status}`
+  try {
+    const j = await res.json()
+    const m = j?.error?.message ?? (typeof j?.error === "string" ? j.error : null) ?? j?.detail ?? j?.message
+    if (m) detail = String(m).slice(0, 200)
+  } catch {}
+  return { ok: false, detail }
+}
+
 // The two prompts, parsed and said plainly when wrong — shared by the
 // guided methods.
 function parseInputs(inputs) {
@@ -416,6 +442,12 @@ async function importFlow(base, key, deps = {}) {
     } catch (e) {
       return { type: "failed", error: e.message }
     }
+    const v = await (deps.verify ?? verifyAnswer)(base, key)
+    if (!v.ok)
+      return {
+        type: "failed",
+        error: `The account was imported into the instance, but Muse didn't answer a test request (${v.detail}). Sign in again to refresh the account — if this keeps happening, the instance's engine may need a restart.`,
+      }
     return { type: "success", provider: ID, key, metadata: { base, account: label } }
   } finally {
     try {
@@ -450,6 +482,12 @@ async function importSignIn(inputs) {
 // starts it detached so it keeps serving after magpie closes, and
 // finishes with the account import above. The user's only step is
 // the muse.ai sign-in in the window, as everywhere else here.
+//
+// Two habits keep a managed setup honest afterwards: a sign-in only
+// succeeds once Muse has really answered a test request (and a
+// pool whose accounts have all died goes back through the import
+// window instead of reporting success), and the loader quietly
+// restarts the managed instance when it finds it gone.
 
 const REPO = "https://github.com/czg86389-hub/muse2api"
 const REPO_ZIP = `${REPO}/archive/refs/heads/main.zip`
@@ -621,6 +659,28 @@ async function waitUp(base, key, timeoutMs = 90_000) {
   return "down"
 }
 
+// startManaged starts the managed instance: Docker when it
+// answers, else the Python venv. It reports how it went —
+// "docker" / "python" / "no-runner" (neither Docker nor a Python
+// 3.10+ exists) / "failed" (a runner exists, the start did not take).
+async function startManaged(dir, deps = {}) {
+  if ((await (deps.dockerReady ?? dockerReady)()) && (await (deps.startDocker ?? startDocker)(dir))) return "docker"
+  const python = await (deps.findPython ?? findPython)()
+  if (!python) return "no-runner"
+  return (await (deps.startPython ?? ((d) => startPython(d, python)))(dir)) ? "python" : "failed"
+}
+
+// resumeOrImport decides a managed instance's sign-in once it is
+// answering with its key: a pool with a live account is verified
+// with one real request — success means Muse answered — while a
+// pool whose accounts are all gone, or a verification that fails,
+// goes back through the import window to refresh the account.
+async function resumeOrImport(base, key, pool, importAccount, verify) {
+  if ((pool?.total ?? 0) > 0 && (pool?.healthy ?? 0) > 0 && (await verify(base, key)).ok)
+    return { type: "success", provider: ID, key, metadata: { base } }
+  return importAccount(base, key)
+}
+
 // butlerFlow runs the whole setup: resume what is already managed,
 // install and start what is not, then import the account. Every
 // step is a parameter so the flow can be tested without a machine.
@@ -649,8 +709,7 @@ async function butlerFlow(deps = {}) {
       return failed(
         `An instance is already answering at ${base}, but it isn't one magpie set up — sign in with "Connect to a muse2api instance" and its key instead, or stop that instance and try again.`,
       )
-    if (pool && (pool.total ?? 0) > 0) return { type: "success", provider: ID, key, metadata: { base } }
-    return importAccount(base, key)
+    return resumeOrImport(base, key, pool, importAccount, deps.verify ?? verifyAnswer)
   }
 
   // install, key, start
@@ -659,17 +718,12 @@ async function butlerFlow(deps = {}) {
       "Couldn't download muse2api from GitHub — the setup needs git (or tar/unzip) and a network that reaches github.com. Or run muse2api yourself and use \"Connect to a muse2api instance\".",
     )
   const key = await (deps.ensureKey ?? ensureManagedKey)(dir)
-  let started = false
-  if (await (deps.dockerReady ?? dockerReady)()) started = await (deps.startDocker ?? startDocker)(dir)
-  if (!started) {
-    const python = await (deps.findPython ?? findPython)()
-    if (!python)
-      return failed(
-        "muse2api is downloaded, but nothing can run it: no Docker (installed and running) and no Python 3.10+. Install Python from python.org or start Docker Desktop, then sign in again.",
-      )
-    started = await (deps.startPython ?? ((d) => startPython(d, python)))(dir)
-  }
-  if (!started)
+  const how = await startManaged(dir, deps)
+  if (how === "no-runner")
+    return failed(
+      "muse2api is downloaded, but nothing can run it: no Docker (installed and running) and no Python 3.10+. Install Python from python.org or start Docker Desktop, then sign in again.",
+    )
+  if (how === "failed")
     return failed(`muse2api was installed at ${dir} but didn't start — its log is ${join(dir, "muse2api.log")} (or Docker's output, if it used Docker).`)
   const up = await (deps.waitUp ?? waitUp)(base, key)
   if (up !== "up")
@@ -679,10 +733,10 @@ async function butlerFlow(deps = {}) {
         : `The managed instance didn't answer within 90 seconds — its log is ${join(dir, "muse2api.log")}.`,
     )
 
-  // accounts already there (a resumed install) need no window
+  // accounts already there (a resumed install) need no window —
+  // unless every one of them is gone, which the import refreshes
   const pool = await probe(base, key).catch(() => null)
-  if (pool && (pool.total ?? 0) > 0) return { type: "success", provider: ID, key, metadata: { base } }
-  return importAccount(base, key)
+  return resumeOrImport(base, key, pool, importAccount, deps.verify ?? verifyAnswer)
 }
 
 async function butlerSignIn() {
@@ -692,6 +746,36 @@ async function butlerSignIn() {
       "Magpie sets muse2api up on this machine for you: it downloads it once into ~/.muse2api-plugin, starts it (it keeps running after magpie closes), and opens a Chrome window for the muse.ai sign-in. Downloading and first start can take a few minutes. The only step that is yours is signing in to muse.ai in that window.",
     method: "auto",
     callback: () => butlerFlow(),
+  }
+}
+
+// maybeWake is the loader's self-healing: if this sign-in is the
+// butler's — the saved key is the managed install's own key, at the
+// managed address — and nothing is answering, start the instance
+// again, so a reboot or a crash does not leave a dead provider
+// behind. A user's own instance, another address, or a key that is
+// not the managed one is never touched. It reports whether it woke
+// the instance; every failure is a quiet false, never a throw.
+async function maybeWake(auth, base, deps = {}) {
+  try {
+    if (base !== (deps.base ?? DEFAULT_BASE)) return false
+    const dir = deps.dir ?? managedDir()
+    if (!(await (deps.isInstalled ?? isInstalled)(dir))) return false
+    const key = (deps.readManagedKey ?? readManagedKey)(dir)
+    if (!key || key !== auth?.key) return false
+    let heard = 0
+    if (deps.heard) heard = await deps.heard(base)
+    else {
+      try {
+        heard = (await ask(base, "", `${base}/models`, 1_500)).status
+      } catch {}
+    }
+    if (heard) return false
+    const how = await (deps.start ?? startManaged)(dir, deps)
+    if (!how || how === "no-runner" || how === "failed") return false
+    return (await (deps.waitUp ?? waitUp)(base, key, 30_000)) === "up"
+  } catch {
+    return false
   }
 }
 
@@ -705,7 +789,11 @@ export async function Muse2apiPlugin({ client } = {}) {
         // the instance takes its key as a plain bearer token, which is
         // what the AI SDK sends apiKey as — no signing fetch is needed
         const { key } = auth
-        return { baseURL: baseURL(provider, auth), apiKey: key }
+        const base = baseURL(provider, auth)
+        // if the butler's instance is gone (reboot, crash), bring
+        // it back before handing its address out
+        await maybeWake(auth, base).catch(() => {})
+        return { baseURL: base, apiKey: key }
       },
       methods: [
         {
@@ -797,4 +885,4 @@ export async function Muse2apiPlugin({ client } = {}) {
 }
 
 // for tests
-export const _internal = { chromeCandidates, findChrome, pickCookies, importFlow, parseInputs, butlerFlow, managedDir, readManagedKey, ensureManagedKey, genKey }
+export const _internal = { chromeCandidates, findChrome, pickCookies, importFlow, parseInputs, butlerFlow, managedDir, readManagedKey, ensureManagedKey, genKey, verifyAnswer, maybeWake, startManaged }

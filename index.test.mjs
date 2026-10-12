@@ -14,7 +14,7 @@ const signedIn = async () => ({ type: "api", key: "m2a_test_key" })
 // A stub muse2api instance: /v1/models and /admin/status behind the
 // one key, 401 without it — the shape the real service answers in.
 // POST /admin/accounts bodies land in `captured` when one is passed.
-async function stubInstance(t, stats = { total: 3, enabled: 3, healthy: 2 }, captured = null) {
+async function stubInstance(t, stats = { total: 3, enabled: 3, healthy: 2 }, captured = null, chat = { status: 200 }) {
   const server = createServer((req, res) => {
     if (req.headers.authorization !== "Bearer m2a_test_key") {
       res.writeHead(401, { "content-type": "application/json" })
@@ -29,6 +29,20 @@ async function stubInstance(t, stats = { total: 3, enabled: 3, healthy: 2 }, cap
         res.writeHead(200, { "content-type": "application/json" })
         res.end(
           JSON.stringify({ added: [{ label: parsed.label, id: "acc-1", cookie_count: Object.keys(parsed.cookies ?? {}).length }] }),
+        )
+      })
+      return
+    }
+    if (req.url === "/v1/chat/completions" && req.method === "POST") {
+      let body = ""
+      req.on("data", (c) => (body += c))
+      req.on("end", () => {
+        captured?.chatRequests?.push(JSON.parse(body))
+        res.writeHead(chat.status, { "content-type": "application/json" })
+        res.end(
+          chat.status === 200
+            ? JSON.stringify({ choices: [{ message: { role: "assistant", content: "ok" } }] })
+            : JSON.stringify({ error: { message: chat.message ?? "no accounts available" } }),
         )
       })
       return
@@ -495,4 +509,142 @@ test("butler: the managed key — generated once, read back, a placeholder repla
 
   assert.equal(_internal.managedDir({ MUSE2API_PLUGIN_HOME: "/somewhere" }), "/somewhere")
   assert.match(_internal.managedDir({}), /\.muse2api-plugin$/)
+})
+
+// ---- self-healing: verify on sign-in, refresh dead accounts, wake -
+
+test("verify: a real answer is ok; the instance's own refusal is the detail", async (t) => {
+  const base = await stubInstance(t)
+  assert.deepEqual(await _internal.verifyAnswer(base, "m2a_test_key"), { ok: true })
+
+  const base2 = await stubInstance(t, { total: 0, enabled: 0, healthy: 0 }, null, { status: 400, message: "没有可用账号，请先在管理页面导入 cookie" })
+  const bad = await _internal.verifyAnswer(base2, "m2a_test_key")
+  assert.equal(bad.ok, false)
+  assert.match(bad.detail, /没有可用账号/)
+
+  const dead = await _internal.verifyAnswer(DEAD, "m2a_test_key")
+  assert.equal(dead.ok, false)
+  assert.match(dead.detail, /never reached an answer/)
+})
+
+test("import: an imported account that cannot answer fails the sign-in, with the instance's words", async (t) => {
+  const captured = []
+  const base = await stubInstance(t, { total: 1, enabled: 1, healthy: 0 }, captured, { status: 400, message: "account session expired" })
+  let polls = 0
+  const done = await _internal.importFlow(base, "m2a_test_key", {
+    findChrome: () => "/fake/chrome",
+    freePort: async () => 9333,
+    launch: async () => ({ proc: fakeProc(), profile: undefined }),
+    waitForCdp: async () => "ws://fake",
+    getCookies: async () => (++polls === 1 ? [] : fullCookieJar()),
+    label: "verify-label",
+  })
+  assert.equal(done.type, "failed")
+  assert.match(done.error, /didn't answer a test request \(account session expired\)/)
+  assert.equal(captured.length, 1) // the upload itself did land
+})
+
+test("butler: accounts present but all dead — the import refreshes instead of reporting success", async (t) => {
+  const base = await stubInstance(t, { total: 2, enabled: 2, healthy: 0 })
+  let imported = false
+  const done = await _internal.butlerFlow({
+    base,
+    dir: "/anywhere",
+    readManagedKey: () => "m2a_test_key",
+    importFlow: async (b, k) => {
+      imported = true
+      return okImport(b, k)
+    },
+  })
+  assert.equal(done.type, "success")
+  assert.ok(imported)
+})
+
+test("butler: a live pool whose test request fails goes back through the import", async (t) => {
+  const base = await stubInstance(t)
+  let imported = false
+  const done = await _internal.butlerFlow({
+    base,
+    dir: "/anywhere",
+    readManagedKey: () => "m2a_test_key",
+    verify: async () => ({ ok: false, detail: "engine stuck" }),
+    importFlow: async (b, k) => {
+      imported = true
+      return okImport(b, k)
+    },
+  })
+  assert.equal(done.type, "success")
+  assert.ok(imported)
+})
+
+test("butler: a live pool that answers is a success without the window", async (t) => {
+  const base = await stubInstance(t)
+  const done = await _internal.butlerFlow({
+    base,
+    dir: "/anywhere",
+    readManagedKey: () => "m2a_test_key",
+    verify: async () => ({ ok: true }),
+    importFlow: async () => {
+      throw new Error("must not import")
+    },
+  })
+  assert.equal(done.type, "success")
+  assert.equal(done.key, "m2a_test_key")
+})
+
+async function wakeFixture(t, key = "m2a_wake_key") {
+  const dir = await mkdtemp(join(tmpdir(), "wake-"))
+  t.after(() => rm(dir, { recursive: true, force: true }))
+  await writeFile(join(dir, "app.py"), "# managed install marker\n")
+  await writeFile(join(dir, ".env"), `MUSE2API_KEY=${key}\n`)
+  return dir
+}
+
+test("wake: the managed instance is down — it is started, and only then", async (t) => {
+  const dir = await wakeFixture(t)
+  let started = false
+  const woke = await _internal.maybeWake(
+    { type: "api", key: "m2a_wake_key" },
+    "http://127.0.0.1:18610/v1",
+    {
+      dir,
+      heard: async () => 0,
+      start: async () => {
+        started = true
+        return "python"
+      },
+      waitUp: async () => "up",
+    },
+  )
+  assert.equal(woke, true)
+  assert.ok(started)
+})
+
+test("wake: answering, foreign-keyed, foreign-addressed and uninstalled are all left alone", async (t) => {
+  const dir = await wakeFixture(t)
+  const noStart = async () => {
+    throw new Error("must not start")
+  }
+  // already answering
+  assert.equal(
+    await _internal.maybeWake({ type: "api", key: "m2a_wake_key" }, "http://127.0.0.1:18610/v1", { dir, heard: async () => 200, start: noStart }),
+    false,
+  )
+  // the saved key is not the managed install's key
+  assert.equal(
+    await _internal.maybeWake({ type: "api", key: "m2a_someone_elses" }, "http://127.0.0.1:18610/v1", { dir, heard: async () => 0, start: noStart }),
+    false,
+  )
+  // a different address entirely
+  assert.equal(
+    await _internal.maybeWake({ type: "api", key: "m2a_wake_key" }, "http://10.0.0.9:18610/v1", { dir, heard: async () => 0, start: noStart }),
+    false,
+  )
+  // nothing installed
+  const empty = await mkdtemp(join(tmpdir(), "wake-empty-"))
+  t.after(() => rm(empty, { recursive: true, force: true }))
+  assert.equal(
+    await _internal.maybeWake({ type: "api", key: "m2a_wake_key" }, "http://127.0.0.1:18610/v1", { dir: empty, heard: async () => 0, start: noStart }),
+    false,
+  )
 })

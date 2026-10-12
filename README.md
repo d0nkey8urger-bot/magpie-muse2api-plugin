@@ -37,6 +37,8 @@ Pick **Set up muse2api for me (automatic)** — the first method. The plugin the
 
 Your only step is signing in to muse.ai in the window. Later sign-ins resume the same install and instance; nothing is downloaded or started twice.
 
+Two habits keep a managed setup honest afterwards. A sign-in counts as successful only once Muse has really answered a tiny test request through the instance — an imported account that cannot answer fails the sign-in with the instance's own reason, not later as a dead provider. And if the managed instance stops (a reboot, a crash), the next agent run quietly starts it again; a pool whose accounts have all expired goes back through the import window instead of reporting success.
+
 It needs: a network that reaches github.com, git (or tar/unzip), Docker running **or** Python 3.10+, and a Chrome/Edge/Brave/Chromium for the sign-in window. Set `MUSE2API_PLUGIN_HOME` to put the managed install somewhere else.
 
 Managing it afterwards: the instance's log is `~/.muse2api-plugin/muse2api.log`; stop it with the pid in `~/.muse2api-plugin/muse2api.pid` (or `docker compose down` in that folder, if it used Docker); delete the folder to remove it entirely. An instance you run yourself is never touched — if something already answers at the instance's address and it isn't the managed one, this method says so and steps aside.

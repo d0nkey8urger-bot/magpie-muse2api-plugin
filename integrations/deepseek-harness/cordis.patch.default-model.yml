@@ -1,0 +1,7 @@
+# Optional: make dsh start on Muse by default. Apply alongside the
+# providers patch (dsh accepts --patch more than once), or merge
+# this entry into the profile's cordis.patch.yml the same way.
+- id: agent-default-model
+  config:
+    provider: muse2api
+    model: muse-spark

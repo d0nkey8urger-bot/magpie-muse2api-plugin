@@ -1,0 +1,29 @@
+# muse2api for DeepSeek Harness (dsh) — merge these entries into the
+# `config.providers` of the llm-pi-ai entry in
+#   $DSH_HOME/profiles/<profile>/cordis.patch.yml
+# (for `dsh web` the profile is "web"). If that file has no llm-pi-ai
+# entry yet, the whole block below can stand as one entry of the
+# patch's top-level list. The key is read from the MUSE2API_KEY
+# environment variable of the dsh process — see make-env.mjs.
+- id: llm-pi-ai
+  config:
+    providers:
+      # Chat Completions — the recommended route: it is muse2api's
+      # original surface, and pi-ai's compatibility switches apply.
+      muse2api:
+        apiKeyEnv: MUSE2API_KEY
+        api: openai-completions
+        baseURL: http://127.0.0.1:18610/v1
+        compat:
+          # muse2api takes the classic output cap, not the newer one
+          maxTokensField: max_tokens
+        models:
+          - id: muse-spark
+      # Responses — the same instance's other protocol, for
+      # comparison; a provider speaks one protocol, hence two.
+      muse2api-responses:
+        apiKeyEnv: MUSE2API_KEY
+        api: openai-responses
+        baseURL: http://127.0.0.1:18610/v1
+        models:
+          - id: muse-spark

@@ -1,42 +1,41 @@
 @echo off
-chcp 65001 >nul
-title muse2api ä¸€é”®å®‰è£…ï¼ˆmagpie æ’ä»¶ï¼‰
+title muse2api Ò»¼ü°²×°£¨magpie ²å¼ş£©
+cd /d "%~dp0"
 echo ============================================
-echo   muse2api ä¸€é”®å®‰è£…
-echo   ä¾æ¬¡å®Œæˆ: æ³¨å†Œæ’ä»¶ - å¯åŠ¨ç®¡å®¶ç™»å½•
+echo   muse2api Ò»¼ü°²×°
+echo   ÒÀ´ÎÍê³É: ×¢²á²å¼ş - Æô¶¯¹Ü¼ÒµÇÂ¼
 echo ============================================
 echo.
 where magpie >nul 2>nul
-if %errorlevel% neq 0 (
-  echo [éœ€è¦å…ˆè£… magpie] æ²¡æœ‰æ‰¾åˆ° magpie å‘½ä»¤ã€‚
-  echo æ­£åœ¨ä¸ºä½ æ‰“å¼€ magpie å®˜ç½‘ï¼Œè£…å¥½åé‡æ–°åŒå‡»æœ¬æ–‡ä»¶å³å¯ã€‚
-  start https://usemagpie.ai
-  pause
-  exit /b 1
-)
-echo [1/2] æ³¨å†Œæ’ä»¶...
+if not errorlevel 1 goto HaveMagpie
+echo [ĞèÒªÏÈ×° magpie] Ã»ÓĞÕÒµ½ magpie ÃüÁî¡£
+echo ÕıÔÚÎªÄã´ò¿ª magpie ¹ÙÍø£¬×°ºÃºóÖØĞÂË«»÷±¾ÎÄ¼ş¼´¿É¡£
+start https://usemagpie.ai
+goto End
+:HaveMagpie
+echo [1/2] ×¢²á²å¼ş...
 magpie plugin add "%~dp0muse2api"
-if %errorlevel% neq 0 (
-  echo æ’ä»¶æ³¨å†Œå¤±è´¥ï¼ŒæŠŠä¸Šé¢çš„æŠ¥é”™å‘å›æ¥çœ‹çœ‹ã€‚
-  pause
-  exit /b 1
-)
+if not errorlevel 1 goto AddOk
+echo ²å¼ş×¢²áÊ§°Ü£¬°ÑÉÏÃæµÄ±¨´í·¢»ØÀ´¿´¿´¡£
+goto End
+:AddOk
 echo.
-echo [2/2] å¯åŠ¨ç™»å½•: æ¥ä¸‹æ¥å‡ºç°çš„èœå•é‡Œï¼Œè¾“å…¥ 1 å†å›è½¦
-echo       ^(é€‰ Set up muse2api for meï¼Œç®¡å®¶æ‰˜ç®¡é‚£ä¸€é¡¹^)
-echo       ç„¶ååœ¨å¼¹å‡ºçš„ Chrome çª—å£é‡Œç™»å½• muse.aiï¼Œå…¶ä½™å…¨è‡ªåŠ¨ã€‚
+echo [2/2] Æô¶¯µÇÂ¼: ½ÓÏÂÀ´³öÏÖµÄ²Ëµ¥Àï£¬ÊäÈë 1 ÔÙ»Ø³µ
+echo       (Ñ¡ Set up muse2api for me£¬¹Ü¼ÒÍĞ¹ÜÄÇÒ»Ïî)
+echo       È»ºóÔÚµ¯³öµÄ Chrome ´°¿ÚÀïµÇÂ¼ muse.ai£¬ÆäÓàÈ«×Ô¶¯¡£
 echo.
 magpie plugin login muse2api
-if exist "%USERPROFILE%\.muse2api-plugin\.env" (
-  echo.
-  echo [3/3] è¿™å°æœºå™¨çš„æ¥å…¥ä¿¡æ¯:
-  powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0show-connection.ps1"
-)
+if not exist "%USERPROFILE%\.muse2api-plugin\.env" goto NoCard
+echo.
+echo [3/3] ÕâÌ¨»úÆ÷µÄ½ÓÈëĞÅÏ¢:
+powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0show-connection.ps1"
+:NoCard
 echo.
 echo ============================================
-echo   ç™»å½•æµç¨‹ç»“æŸã€‚éªŒè¯æ•´æ¡é“¾è·¯:
+echo   µÇÂ¼Á÷³Ì½áÊø¡£ÑéÖ¤ÕûÌõÁ´Â·:
 echo     magpie provider test muse2api
-echo   åœ¨ Codex é‡Œå¼€å§‹ç”¨:
+echo   ÔÚ Codex Àï¿ªÊ¼ÓÃ:
 echo     magpie codex muse2api/muse-spark
 echo ============================================
+:End
 pause

@@ -47,6 +47,7 @@ Managing it afterwards: the instance's log is `~/.muse2api-plugin/muse2api.log`;
 
 - **CC Switch** — use Muse in the Codex / OpenCode / Claude Code setups CC Switch manages: one-click import links (with your managed key filled in by a helper script) under [`integrations/cc-switch/`](integrations/cc-switch/README.md).
 - **DeepSeek Harness (dsh)** — Muse as a custom provider, no plugin needed: UI steps, a ready `cordis.patch.yml`, and a key helper under [`integrations/deepseek-harness/`](integrations/deepseek-harness/README.md).
+- **Pi Agent** — Muse as a custom provider in `models.json`, no plugin needed: a merge-ready provider fragment whose key is fetched by command, never written into the file, under [`integrations/pi/`](integrations/pi/README.md).
 
 ## Doing it yourself instead
 

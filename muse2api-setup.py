@@ -214,15 +214,31 @@ def start_python(d: Path) -> bool:
         if not run([str(venv_py), "-m", "pip", "install", *deps], cwd=d):
             return False
     log = open(d / "muse2api.log", "ab")
-    kwargs: dict = {}
+    server_py = venv_py
+    attempts: list[dict] = []
     if os.name == "nt":
-        kwargs["creationflags"] = 0x00000008 | 0x00000200  # detached + new process group
+        # 关窗不死三件套:用无控制台的 pythonw.exe 跑服务(根本没有窗口
+        # 可以误关)、DETACHED_PROCESS 脱离父控制台、再尽量脱离启动器
+        # 的 job object(某些终端会连坐杀掉子进程)。
+        pythonw = venv / "Scripts" / "pythonw.exe"
+        if pythonw.exists():
+            server_py = pythonw
+        detached = 0x00000008 | 0x00000200  # DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP
+        attempts = [{"creationflags": detached | 0x01000000}, {"creationflags": detached}]
     else:
-        kwargs["start_new_session"] = True
-    proc = subprocess.Popen(
-        [str(venv_py), "-m", "uvicorn", "app:app", "--host", "127.0.0.1", "--port", "18610"],
-        cwd=d, stdin=subprocess.DEVNULL, stdout=log, stderr=log, **kwargs,
-    )
+        attempts = [{"start_new_session": True}]
+    proc = None
+    for extra in attempts:
+        try:
+            proc = subprocess.Popen(
+                [str(server_py), "-m", "uvicorn", "app:app", "--host", "127.0.0.1", "--port", "18610"],
+                cwd=d, stdin=subprocess.DEVNULL, stdout=log, stderr=log, **extra,
+            )
+            break
+        except OSError:
+            continue
+    if proc is None:
+        return False
     try:
         (d / "muse2api.pid").write_text(str(proc.pid), encoding="utf-8")
     except OSError:
@@ -342,7 +358,7 @@ def main() -> int:
     if state != "up":
         say(f"服务起来了但没在 90 秒内应答(状态:{state})，日志在 {d / 'muse2api.log'}。")
         return 2
-    say("服务已经在 http://127.0.0.1:18610 运行。")
+    say("服务已经在 http://127.0.0.1:18610 运行(后台无窗口，关掉本窗口不影响它)。")
     stats = pool(key)
     if stats and stats.get("total", 0) > 0 and stats.get("healthy", 0) > 0:
         ok, _ = verify(key)

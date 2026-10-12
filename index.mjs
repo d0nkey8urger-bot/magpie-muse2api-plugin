@@ -652,6 +652,9 @@ async function startPython(dir, python) {
   const proc = spawn(venvPy, ["-m", "uvicorn", "app:app", "--host", "127.0.0.1", "--port", "18610"], {
     cwd: dir,
     detached: true,
+    // On Windows, detached alone still gives the child its own console
+    // window — and closing that window kills the service. Hide it.
+    windowsHide: true,
     stdio: ["ignore", logFd, logFd],
   })
   proc.on?.("error", () => {})

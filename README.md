@@ -22,6 +22,8 @@ magpie plugin login muse2api
 
 or download a release zip, unzip it, and `magpie plugin add` the unzipped folder. In OpenCode without magpie, put the folder where OpenCode loads local plugins from and run `opencode auth login`.
 
+**No gateway tool at all?** This repo also ships a standalone setup, `muse2api-setup.py` (Python 3.10+, standard library only): it performs the same installation, sign-in and verification with no magpie involved, and ends by printing a connection card — the API base URL, the key, the model, the fields to paste into any tool, and ccswitch:// import links. The release zip's one-click scripts run it for you. What you plug the card into is your own business.
+
 ## The short way — let the plugin set it up
 
 ```sh

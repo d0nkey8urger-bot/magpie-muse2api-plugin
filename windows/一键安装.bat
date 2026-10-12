@@ -27,6 +27,11 @@ echo       ^(选 Set up muse2api for me，管家托管那一项^)
 echo       然后在弹出的 Chrome 窗口里登录 muse.ai，其余全自动。
 echo.
 magpie plugin login muse2api
+if exist "%USERPROFILE%\.muse2api-plugin\.env" (
+  echo.
+  echo [3/3] 这台机器的接入信息:
+  powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0show-connection.ps1"
+)
 echo.
 echo ============================================
 echo   登录流程结束。验证整条链路:

@@ -1,0 +1,22 @@
+# muse2api for CLIProxyAPI (CPA) — merge into CPA's config.yaml.
+# Layout follows CPA v8 (config-version: 8; see its config.example.yaml).
+# If your config.yaml already has an `api-keys:` root, merge the
+# openai-compatibility entry into it rather than adding a second root.
+# CPA watches config.yaml and reloads changes live — no restart needed.
+api-keys:
+  openai-compatibility:
+    - name: "muse2api"
+      base-url: "http://127.0.0.1:18610/v1"
+      keys:
+        # CPA's config offers no environment-variable indirection for
+        # upstream keys, so the instance key goes here in plain text.
+        # print-key.mjs, next to this file, prints the managed key.
+        - api-key: "PASTE_MUSE2API_KEY_HERE"
+      models:
+        - name: "muse-spark"
+          alias: "muse-spark"
+
+# Clients (Codex, OpenCode, dsh, pi, ...) then talk to CPA itself:
+#   base URL   http://127.0.0.1:8317/v1
+#   api key    one of the strings under `access.api-keys` in config.yaml
+#   model      muse-spark

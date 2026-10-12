@@ -1,5 +1,5 @@
 import assert from "node:assert/strict"
-import { mkdtemp, rm, writeFile } from "node:fs/promises"
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
 import { createServer } from "node:http"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -647,4 +647,36 @@ test("wake: answering, foreign-keyed, foreign-addressed and uninstalled are all 
     await _internal.maybeWake({ type: "api", key: "m2a_wake_key" }, "http://127.0.0.1:18610/v1", { dir: empty, heard: async () => 0, start: noStart }),
     false,
   )
+})
+
+test("install: the bundled copy is installed — no download step runs", async (t) => {
+  const bundle = await mkdtemp(join(tmpdir(), "bundle-"))
+  t.after(() => rm(bundle, { recursive: true, force: true }))
+  await writeFile(join(bundle, "app.py"), "# bundled engine\n")
+  const dir = await mkdtemp(join(tmpdir(), "install-"))
+  t.after(() => rm(dir, { recursive: true, force: true }))
+  const ok = await _internal.install(dir, {
+    bundleDir: bundle,
+    download: async () => {
+      throw new Error("must not download")
+    },
+  })
+  assert.equal(ok, true)
+  assert.equal(await readFile(join(dir, "app.py"), "utf8"), "# bundled engine\n")
+})
+
+test("install: without a bundled copy it falls back to the download", async (t) => {
+  const dir = await mkdtemp(join(tmpdir(), "install2-"))
+  t.after(() => rm(dir, { recursive: true, force: true }))
+  let downloaded = false
+  const ok = await _internal.install(dir, {
+    bundleDir: join(dir, "no-such-bundle"),
+    download: async (d) => {
+      downloaded = true
+      await writeFile(join(d, "app.py"), "# downloaded\n")
+      return true
+    },
+  })
+  assert.equal(ok, true)
+  assert.ok(downloaded)
 })

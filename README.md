@@ -30,7 +30,7 @@ magpie plugin login muse2api
 
 Pick **Set up muse2api for me (automatic)** — the first method. The plugin then does steps 0–2 below by itself:
 
-1. downloads muse2api once into `~/.muse2api-plugin` (git clone, or the source archive),
+1. installs muse2api into `~/.muse2api-plugin` — a pinned copy ships inside the plugin (`vendor/muse2api`), so there is no download; a GitHub clone is only a fallback if that copy is missing,
 2. invents the instance's `MUSE2API_KEY` and writes it into that install's `.env`,
 3. starts the instance — with Docker if Docker is running, otherwise with a Python venv it creates — **detached, so it keeps serving after magpie closes**,
 4. opens the sign-in window and imports your Muse account, as in step 1.
@@ -39,7 +39,7 @@ Your only step is signing in to muse.ai in the window. Later sign-ins resume the
 
 Two habits keep a managed setup honest afterwards. A sign-in counts as successful only once Muse has really answered a tiny test request through the instance — an imported account that cannot answer fails the sign-in with the instance's own reason, not later as a dead provider. And if the managed instance stops (a reboot, a crash), the next agent run quietly starts it again; a pool whose accounts have all expired goes back through the import window instead of reporting success.
 
-It needs: a network that reaches github.com, git (or tar/unzip), Docker running **or** Python 3.10+, and a Chrome/Edge/Brave/Chromium for the sign-in window. Set `MUSE2API_PLUGIN_HOME` to put the managed install somewhere else.
+It needs: Docker running **or** Python 3.10+, and a Chrome/Edge/Brave/Chromium for the sign-in window. (The GitHub fallback, if it is ever needed, needs git or tar/unzip and a network that reaches github.com.) Set `MUSE2API_PLUGIN_HOME` to put the managed install somewhere else.
 
 Managing it afterwards: the instance's log is `~/.muse2api-plugin/muse2api.log`; stop it with the pid in `~/.muse2api-plugin/muse2api.pid` (or `docker compose down` in that folder, if it used Docker); delete the folder to remove it entirely. An instance you run yourself is never touched — if something already answers at the instance's address and it isn't the managed one, this method says so and steps aside.
 
@@ -136,6 +136,7 @@ Good to know: muse.ai's web API returns no structured tool calls, so muse2api re
 ## Development
 
 ```sh
-bun test                              # in this folder
-bun scripts/check.mjs muse2api        # from the repo root
+bun test    # in this folder
 ```
+
+The bundled muse2api under `vendor/muse2api` is pinned — its source commit and license are in its `VENDOR.md`; bump it deliberately, in its own commit, when upstream moves.

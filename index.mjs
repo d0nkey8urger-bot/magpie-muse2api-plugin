@@ -28,10 +28,11 @@
 import { spawn } from "node:child_process"
 import { randomBytes } from "node:crypto"
 import { closeSync, existsSync, openSync, readFileSync, writeFileSync } from "node:fs"
-import { mkdir, mkdtemp, readdir, rename, rm, writeFile } from "node:fs/promises"
+import { cp, mkdir, mkdtemp, readdir, rename, rm, writeFile } from "node:fs/promises"
 import { createServer as createNetServer } from "node:net"
 import { homedir, tmpdir } from "node:os"
 import { delimiter, isAbsolute, join } from "node:path"
+import { fileURLToPath } from "node:url"
 
 const ID = "muse2api"
 const CHAT = "@ai-sdk/openai-compatible"
@@ -537,11 +538,30 @@ async function isInstalled(dir) {
   return existsSync(join(dir, "app.py"))
 }
 
-// install fetches muse2api into the managed folder: a git clone
-// first, as the project's README prescribes; the source archive
-// (system tar, or unzip) where there is no git.
-async function install(dir) {
+// The copy of muse2api bundled with this package (vendor/muse2api —
+// pinned, see its VENDOR.md): setup normally installs it and needs
+// no download at all, least of all from GitHub.
+const BUNDLED_MUSE2API = fileURLToPath(new URL("./vendor/muse2api/", import.meta.url))
+
+// install puts muse2api into the managed folder: the bundled copy
+// first; where it is absent (a partial copy of this package), the
+// download below.
+async function install(dir, deps = {}) {
   await mkdir(dir, { recursive: true })
+  const bundle = deps.bundleDir ?? BUNDLED_MUSE2API
+  if (bundle && existsSync(join(bundle, "app.py"))) {
+    try {
+      await cp(bundle, dir, { recursive: true })
+    } catch {}
+    if (await isInstalled(dir)) return true
+  }
+  return (deps.download ?? downloadMuse2api)(dir)
+}
+
+// downloadMuse2api fetches muse2api from GitHub: a git clone first,
+// as the project's README prescribes; the source archive (system
+// tar, or unzip) where there is no git.
+async function downloadMuse2api(dir) {
   const g = await exec0("git", ["clone", "--depth", "1", REPO, dir], { timeoutMs: 300_000 })
   if (g.ok && (await isInstalled(dir))) return true
   const tmp = await mkdtemp(join(tmpdir(), "muse2api-dl-"))
@@ -715,7 +735,7 @@ async function butlerFlow(deps = {}) {
   // install, key, start
   if (!(await (deps.isInstalled ?? isInstalled)(dir)) && !(await (deps.install ?? install)(dir)))
     return failed(
-      "Couldn't download muse2api from GitHub — the setup needs git (or tar/unzip) and a network that reaches github.com. Or run muse2api yourself and use \"Connect to a muse2api instance\".",
+      `Couldn't set muse2api up at ${dir} — the copy bundled with the plugin couldn't be installed, and the GitHub fallback needs git (or tar/unzip) and a network that reaches github.com. Or run muse2api yourself and use "Connect to a muse2api instance".`,
     )
   const key = await (deps.ensureKey ?? ensureManagedKey)(dir)
   const how = await startManaged(dir, deps)
@@ -743,7 +763,7 @@ async function butlerSignIn() {
   return {
     url: "",
     instructions:
-      "Magpie sets muse2api up on this machine for you: it downloads it once into ~/.muse2api-plugin, starts it (it keeps running after magpie closes), and opens a Chrome window for the muse.ai sign-in. Downloading and first start can take a few minutes. The only step that is yours is signing in to muse.ai in that window.",
+      "Magpie sets muse2api up on this machine for you: it installs it into ~/.muse2api-plugin (a copy ships inside the plugin, so there is nothing to download), starts it (it keeps running after magpie closes), and opens a Chrome window for the muse.ai sign-in. The first start can take a few minutes. The only step that is yours is signing in to muse.ai in that window.",
     method: "auto",
     callback: () => butlerFlow(),
   }
@@ -885,4 +905,4 @@ export async function Muse2apiPlugin({ client } = {}) {
 }
 
 // for tests
-export const _internal = { chromeCandidates, findChrome, pickCookies, importFlow, parseInputs, butlerFlow, managedDir, readManagedKey, ensureManagedKey, genKey, verifyAnswer, maybeWake, startManaged }
+export const _internal = { chromeCandidates, findChrome, pickCookies, importFlow, parseInputs, butlerFlow, managedDir, readManagedKey, ensureManagedKey, genKey, verifyAnswer, maybeWake, startManaged, install }

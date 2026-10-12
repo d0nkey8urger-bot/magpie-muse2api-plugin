@@ -43,6 +43,11 @@ It needs: Docker running **or** Python 3.10+, and a Chrome/Edge/Brave/Chromium f
 
 Managing it afterwards: the instance's log is `~/.muse2api-plugin/muse2api.log`; stop it with the pid in `~/.muse2api-plugin/muse2api.pid` (or `docker compose down` in that folder, if it used Docker); delete the folder to remove it entirely. An instance you run yourself is never touched — if something already answers at the instance's address and it isn't the managed one, this method says so and steps aside.
 
+## Integrations
+
+- **CC Switch** — use Muse in the Codex / OpenCode / Claude Code setups CC Switch manages: one-click import links (with your managed key filled in by a helper script) under [`integrations/cc-switch/`](integrations/cc-switch/README.md).
+- **DeepSeek Harness** — planned; a custom provider there is configuration, like CC Switch's.
+
 ## Doing it yourself instead
 
 ### Step 0 — run muse2api
